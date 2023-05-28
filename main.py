@@ -215,14 +215,25 @@ decoder_outputs = decoder_dense(decoder_outputs)
 
 
 
-# Model
+# Model syntax for seq2seq
 model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
+"""
+Compiles the model by specifying the optimizer, loss function, and evaluation metrics.
+    1. optimizer='adam': Optimization algorithm known for its efficiency in training deep neural networks.
+    2. loss='sparse_categorical_crossentropy': Suitable for multi-class classification problems where the target sequences 
+    are represented as integers.
+    3. metrics=['accuracy']: It defines the evaluation metric used to monitor the model's performance during training. 
+    In this case, it uses accuracy, which measures the proportion of correctly predicted output sequences compared to the 
+    total number of sequences.
+"""
 model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 model.summary()
 
-# Training
+# Training (Model iteratively adjusts its weights based on provided training data to minimize the defined loss function)
+# Determines the number of training examples processed in each iteration before updating the model's weights.
 batch_size = 32
 
+# An epoch represents one complete pass through the entire training dataset.
 history = model.fit(
     [padded_source_sequences, padded_target_sequences[:, :-1]],
     padded_target_sequences[:, 1:],
