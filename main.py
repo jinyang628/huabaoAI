@@ -42,10 +42,18 @@ train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
 
 # Tokenization
 # Tokenizer is used to vectorize text data by converting it into sequences of integers
-tokenizer = Tokenizer()
+tokenizer = Tokenizer(oov_token="<OOV>")
 # Fits the tokenizer on the training data and updates the internal vocabulary of the tokenizer
 # based on the text data provided. Assigns a unique integer index to each word based on its frequency
-tokenizer.fit_on_texts(train_df['source'])
+tokenizer.fit_on_texts(train_df['source'] + train_df['target'])
+
+"""
+Word_index
+Check that tokenisation has been done successfully. Expected output should be a dictionary where the key is the 
+word and the value is the associated integer.
+"""
+word_index = tokenizer.word_index
+#print(word_index)
 
 """
 Convert sentences into sequences
@@ -59,8 +67,17 @@ source_sequences = tokenizer.texts_to_sequences(train_df['source'])
 #  where the source represents the input sequence and the target represents the desired output or translation.
 target_sequences = tokenizer.texts_to_sequences(train_df['target'])
 
-# By using the same tokenizer, we prepare the "source" test data in the same format as the training data,
-# making it suitable for evaluation or prediction with the trained model.
+"""
+By using the same tokenizer, we prepare the "source" test data in the same format as the training data,
+making it suitable for evaluation or prediction with the trained model.
+
+Note that because we didn't fit the tokenizer on the test data before, some words might be new to the tokenizer here.
+Originally, tensorflow will just pretend that word did not appear (E.g. if the 3rd word is unrecognisable, the array 
+sequence will only have the token/integer of 1st, 2nd and 4th word). But because we added an Out Of Vocabulary (OOV) 
+token when we initialised the tokenizer above, all unrecognisable words will simply be represented as that. Note that 
+the value of the OOV token must be sth we DO NOT expect to see in the text, that's why we chose <OOV>.
+OOV token is important because it maintains the sequence length even if some words are unrecognisable
+"""
 test_sequences = tokenizer.texts_to_sequences(test_df['source'])
 
 # Padding
@@ -69,19 +86,13 @@ max_length = max(max(len(seq) for seq in source_sequences),
                  max(len(seq) for seq in target_sequences))
 padded_source_sequences = pad_sequences(source_sequences, maxlen=max_length, padding='post')
 padded_target_sequences = pad_sequences(target_sequences, maxlen=max_length, padding='post')
-padded_test_sequences = pad_sequences(test_sequences, maxlen=max_length, padding='post')
 
 """
-# I USED THE WRONG MODEL :(
-# model_archive_path = './tfhub_module_dir/nnlm-en-dim50_2.tar.gz'
-extract_dir = './tfhub_module_dir/extracted_model'
-# Extract the contents of the archive to a directory
-# with tarfile.open(model_archive_path, 'r:gz') as tar:
-    # tar.extractall(extract_dir)
-
-# Load the model from the extracted directory
-embeddings = hub.load(extract_dir)
+While we can ensure that max_length is the maximum of source_sequences and target_sequences, test cases
+are unknown to us when we train the model. In the event a test sequence is actually longer than whatever we have seen 
+so far, to make sure that length of each sequence is still the same, we truncate the sequence from the back
 """
+padded_test_sequences = pad_sequences(test_sequences, maxlen=max_length, padding='post', truncating='post')
 
 embedding_dim = 100  # Dimensionality of the word embeddings
 hidden_units = 256  # Number of units in the LSTM layers
@@ -179,7 +190,7 @@ sequence based on the previous words.
 decoder_inputs = Input(shape=(max_length - 1,))
 decoder_embedding = Embedding(input_dim=vocab_size, output_dim=embedding_dim)(decoder_inputs)
 decoder_lstm1 = LSTM(hidden_units, return_sequences=True, return_state=True)
-decoder_lstm2 = LSTM(hidden_units, return_sequences=True, return_state=True)
+decoder_lstm2 = LSTM(hidden_units, return_sequences=False, return_state=True)
 decoder_outputs, _, _ = decoder_lstm2(decoder_lstm1(decoder_embedding, initial_state=encoder_states))
 
 """
@@ -242,6 +253,9 @@ history = model.fit(
     validation_split=0.2
 )
 
+# Save the trained model
+model.save('chinese_grammar_correction_model.h5')
+
 # loss refers to loss function -> measures the discrepancy between the predicted output and the actual output
 # accuracy -> represents the proportion of correctly predicted outputs compared to the total number of training examples
 # val_loss refers to validation loss -> indicates how well the model is performing on unseen data
@@ -265,7 +279,7 @@ predictions = model.predict([padded_input_sequences, padded_input_sequences[:, :
 
 corrected_sentences = []
 for prediction in predictions:
-    corrected_sentence = ' '.join([tokenizer.index_word.get(index, '') for index in np.argmax(prediction, axis=1)])
+    corrected_sentence = ' '.join([tokenizer.index_word.get(index, '<OOV>') for index in np.argmax(prediction, axis=1)])
     corrected_sentences.append(corrected_sentence)
 
 for input_sentence, corrected_sentence in zip(input_sentences, corrected_sentences):
