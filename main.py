@@ -1,5 +1,6 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from transformers import BertTokenizer, TFBertModel
 from keras.layers import Input, Embedding, LSTM, Dense
 from keras.models import Model
 from keras.preprocessing.text import Tokenizer
@@ -113,11 +114,8 @@ The encoder operates on the input sequence one element at a time, updating its i
 The final hidden state of the encoder, which contains a summary of the input sequence, is passed to the decoder.
 """
 
-"""
-Defines the input layer for the encoder in your model. Specifies that the input will be a sequence of integers with a
-length of max_length, representing the encoded source sentences.
-"""
-encoder_inputs = Input(shape=(max_length,))
+encoder_inputs = Input(shape=(max_length,), dtype=tf.int32)
+encoder_outputs = bert_model(encoder_inputs)[0]
 
 """
 Embedding layer to the encoder. The embedding layer is responsible for mapping the input sequence of integers to their 
@@ -147,8 +145,8 @@ selectively retains or forgets information based on the input and its relevance 
 allows LSTM units to handle the vanishing gradient problem better than traditional RNNs, enabling them to capture 
 long-term dependencies effectively 
 """
+hidden_units = 256
 encoder_lstm1 = LSTM(hidden_units, return_sequences=True, return_state=True)
-encoder_outputs1, state_h1, state_c1 = encoder_lstm1(encoder_embedding)
 
 """
 The input to this layer is encoder_outputs1, which is the output sequence from the first LSTM layer
@@ -172,11 +170,12 @@ However, stacking LSTM layers is a design choice and depends on the complexity o
 sequence, and the available computational resources. Adding more layers increases the model's capacity but also requires 
 more computational resources and may increase the risk of overfitting if not carefully regularized.
 """
-encoder_lstm2 = LSTM(hidden_units, return_state=True)
+
+encoder_lstm2 = LSTM(hidden_units, return_sequences=False, return_state=True)
+encoder_outputs1 = encoder_lstm1(encoder_outputs)
 encoder_outputs, state_h, state_c = encoder_lstm2(encoder_outputs1)
 
-# Contains the final hidden state and cell state of the encoder, which will be passed as initial states to the decoder.
-encoder_states = [state_h, state_c]
+
 
 """
 While the encoder processes the input sequence and extracts its meaningful representation, the decoder uses this 
@@ -187,11 +186,12 @@ receive sequences of length max_length - 1. The -1 is used because in sequence-t
 the target sequence as input, but shifts it by one position. This is done to predict the next word in the target 
 sequence based on the previous words.
 """
-decoder_inputs = Input(shape=(max_length - 1,))
+decoder_inputs = Input(shape=(max_length - 1,), dtype=tf.int32)
 decoder_embedding = Embedding(input_dim=vocab_size, output_dim=embedding_dim)(decoder_inputs)
 decoder_lstm1 = LSTM(hidden_units, return_sequences=True, return_state=True)
 decoder_lstm2 = LSTM(hidden_units, return_sequences=False, return_state=True)
-decoder_outputs, _, _ = decoder_lstm2(decoder_lstm1(decoder_embedding, initial_state=encoder_states))
+decoder_outputs1 = decoder_lstm1(decoder_embedding, initial_state=[state_h, state_c])
+decoder_outputs, _, _ = decoder_lstm2(decoder_outputs1)
 
 """
 A dense layer with vocab_size units is added to the model, followed by a softmax activation function. 
